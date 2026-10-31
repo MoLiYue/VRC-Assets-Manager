@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MioVRCA new</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='7' fill='%2312a096'/%3E%3Cpath d='M10 23V9l12 14V9' stroke='white' stroke-width='3.4' fill='none' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+<script>window.API_TOKEN = "__TOKEN__"; window.LANG = "__LANG__";</script>
+<script src="i18n.js"></script>
+</head>
+<body>
+<header class="top">
+  <button id="btnSide" class="btn icon sidebtn" title="筛选与分类" aria-label="筛选与分类" aria-controls="side" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <button class="brand" id="brand" tabindex="-1" title="MioVRCA new（基于 MioVRCA 修改）"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="3" width="26" height="26" rx="6"/><path d="M11 22V10l10 12V10"/></svg><span>MioVRCA new</span></button>
+  <div class="views" role="tablist" aria-label="视图">
+    <button id="vLib" class="on" role="tab" aria-selected="true">素材库</button>
+    <button id="vProj" role="tab" aria-selected="false">工程</button>
+    <button id="vPipe" role="tab" aria-selected="false">流水线</button>
+    <button id="vShop" role="tab" aria-selected="false">Booth</button>
+    <button id="vXy" role="tab" aria-selected="false">闲鱼</button>
+  </div>
+  <label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="q" type="search" placeholder="搜索名称、店铺、标签、路径" autocomplete="off"></label>
+  <select id="sort" title="排序">
+    <option value="recent">最近添加</option>
+    <option value="name">名称</option>
+    <option value="size">占用空间</option>
+    <option value="used">使用中优先</option>
+  </select>
+  <select id="shopSort" title="排序" hidden>
+    <option value="popular">人气</option>
+    <option value="new">最新上架</option>
+    <option value="cheap">价格从低到高</option>
+    <option value="pricey">价格从高到低</option>
+  </select>
+  <button id="btnPanAdd" class="btn addpan fold" title="添加网盘分享（百度网盘、Google Drive、Dropbox）" aria-label="网盘素材：添加网盘分享（百度网盘、Google Drive、Dropbox）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>网盘素材</span></button>
+  <button id="btnUpdate" class="btn update" hidden></button>
+  <button id="btnScan" class="btn scan fold" title="重新扫描" aria-label="重新扫描"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg><span>重新扫描</span></button>
+  <button id="btnSettings" class="btn icon" title="设置" aria-label="设置"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+</header>
+
+<div class="layout">
+  <aside class="side" id="side"></aside>
+  <main class="main">
+    <div class="clipbar" id="clipbar" hidden></div>
+    <div class="resultbar" id="resultbar"></div>
+    <div class="grid" id="grid"></div>
+    <section class="webview" id="webview" hidden><div class="webbar" id="webbar"></div><div class="webhost" id="webhost"></div></section>
+  </main>
+</div>
+
+<footer class="status" id="status"></footer>
+
+<aside class="drawer" id="drawer" aria-hidden="true"></aside>
+<div class="scrim" id="scrim"></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-hidden="true" tabindex="-1"></div>
+<div class="offline" id="offline" role="alert" hidden>与程序的连接已断开，正在重试…</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="app.js"></script>
+<script src="checkup.js"></script>
+<script src="recipe.js"></script>
+<script src="libtools.js"></script>
+<script src="cloud.js"></script>
+<script src="bundle.js"></script>
+<script src="disk.js"></script>
+<script src="aiusage.js"></script>
+<script src="chatgpt.js"></script>
+<script src="stores.js"></script>
+</body>
+</html>

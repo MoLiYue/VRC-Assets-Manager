@@ -1,0 +1,151 @@
+# 测试并构建安装版（NSIS）和便携版（zip），步骤与 packaging/build.sh 相同。
+#
+# - 推送到 main / master、提交 PR、手动运行：构建产物在该次运行的 Artifacts 中下载。
+# - 推送 v 开头的标签（例如 v0.0.1）：另外创建一个草稿 Release，附上两个安装包，说明取自 CHANGELOG.md
+#   中对应版本的一节。确认无误后在 GitHub 上手动发布。
+#
+# 标签、internal/core/version.go、packaging/installer.nsi、packaging/使用说明.txt 和 exe 的资源
+# （cmd/miovrca/app.rc、app.manifest，以及由 app.rc 生成的 rsrc_windows_amd64.syso）中的版本号必须一致，
+# 不一致时构建失败。改了 app.rc 后要重新生成 syso，例如：
+#   cd cmd/miovrca && llvm-windres --codepage=65001 --target=pe-x86-64 -O coff -i app.rc -o rsrc_windows_amd64.syso
+# （--codepage=65001：app.rc 中的中文按 UTF-8 读入，否则 exe 属性里是乱码）
+# 安装包没有代码签名。
+name: 构建
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: 测试与打包
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      # 第三方库在 third_party/ 中，不需要下载。
+      # -p=1：测试逐个包运行。部分测试会先关闭一个端口、再断言连接被拒绝，并行时这个端口可能被其他包的测试服务占用，导致偶发失败。
+      GOFLAGS: -mod=mod -p=1
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.mod
+
+      - name: 安装 NSIS
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends nsis
+          makensis -VERSION
+          # installer.nsi 指定 Target amd64-unicode，需要对应的安装程序存根
+          if ! ls /usr/share/nsis/Stubs/ | grep -q "amd64-unicode"; then
+            echo "::error::NSIS 缺少 amd64-unicode 存根，无法生成 64 位安装程序"
+            ls /usr/share/nsis/Stubs/
+            exit 1
+          fi
+
+      - name: 检查版本号
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER=$(sed -n 's/^var AppVersion = "\([^"]*\)".*/\1/p' internal/core/version.go)
+          NSI=$(sed -n 's/^!define VERSION "\([^"]*\)".*/\1/p' packaging/installer.nsi)
+          VIP=$(sed -n 's/^VIProductVersion "\([^"]*\)".*/\1/p' packaging/installer.nsi)
+          echo "version.go: $VER；installer.nsi: $NSI（$VIP）"
+          bad=0
+          [ -n "$VER" ] || { echo "::error file=internal/core/version.go::读不到 AppVersion"; bad=1; }
+          [ "$NSI" = "$VER" ] || { echo "::error file=packaging/installer.nsi::VERSION 为 $NSI，version.go 为 $VER"; bad=1; }
+          [ "$VIP" = "$VER.0" ] || { echo "::error file=packaging/installer.nsi::VIProductVersion 应为 $VER.0，实际为 $VIP"; bad=1; }
+          grep -q "MioVRCA new $VER " packaging/使用说明.txt || { echo "::error file=packaging/使用说明.txt::标题中的版本号不是 $VER"; bad=1; }
+          RC=$(echo "$VER" | tr . ,)
+          grep -q "^FILEVERSION $RC,0$" cmd/miovrca/app.rc && grep -q "^PRODUCTVERSION $RC,0$" cmd/miovrca/app.rc \
+            && grep -q "\"FileVersion\", \"$VER\"" cmd/miovrca/app.rc && grep -q "\"ProductVersion\", \"$VER\"" cmd/miovrca/app.rc \
+            || { echo "::error file=cmd/miovrca/app.rc::版本号不是 $VER"; bad=1; }
+          grep -q "version=\"$VER.0\"" cmd/miovrca/app.manifest || { echo "::error file=cmd/miovrca/app.manifest::版本号不是 $VER.0"; bad=1; }
+          # syso 是 app.rc 编译出来的：其中的 FILEVERSION 要与 app.rc 一致（忘记重新生成时会对不上）
+          python3 - "$VER" <<'PY'
+          import struct, sys
+          ver = [int(x) for x in sys.argv[1].split(".")] + [0]
+          b = open("cmd/miovrca/rsrc_windows_amd64.syso", "rb").read()
+          i = b.find(struct.pack("<I", 0xFEEF04BD))
+          ms, ls = struct.unpack("<II", b[i + 8:i + 16]) if i >= 0 else (0, 0)
+          got = [ms >> 16, ms & 0xFFFF, ls >> 16, ls & 0xFFFF]
+          if got != ver[:4]:
+              print(f"::error file=cmd/miovrca/rsrc_windows_amd64.syso::其中的版本为 {'.'.join(map(str, got))}，请按 app.rc 重新生成")
+              sys.exit(1)
+          PY
+          [ $? = 0 ] || bad=1
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "$VER" ]; then
+            echo "::error::标签为 ${GITHUB_REF_NAME}，代码中的版本号为 $VER"; bad=1
+          fi
+          [ "$bad" = 0 ]
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: go vet
+        run: GOOS=windows go vet ./...
+
+      - name: 测试并打包
+        run: sh packaging/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MioVRCA_new-${{ steps.ver.outputs.version }}
+          path: |
+            dist/MioVRC_AssetManager_new-setup-${{ steps.ver.outputs.version }}.exe
+            dist/MioVRC_AssetManager_new-portable-${{ steps.ver.outputs.version }}.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: 草稿 Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: MioVRCA_new-${{ needs.build.outputs.version }}
+          path: dist
+
+      - name: 创建草稿 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VER: ${{ needs.build.outputs.version }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # CHANGELOG.md 中「## 版本号」到下一个「## 」之间的内容
+          awk -v v="## $VER" '$0 == v {on = 1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "（CHANGELOG.md 中没有 $VER 的说明）" > notes.md
+          files=(dist/MioVRC_AssetManager_new-setup-"$VER".exe dist/MioVRC_AssetManager_new-portable-"$VER".zip)
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # 重新运行时：替换已有 Release 的附件，说明不变
+            gh release upload "$TAG" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "${files[@]}" --draft --verify-tag --title "MioVRCA new $VER" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+          fi
