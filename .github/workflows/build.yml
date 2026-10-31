@@ -67,7 +67,8 @@ jobs:
           VER=$(sed -n 's/^var AppVersion = "\([^"]*\)".*/\1/p' internal/core/version.go)
           NSI=$(sed -n 's/^!define VERSION "\([^"]*\)".*/\1/p' packaging/installer.nsi)
           VIP=$(sed -n 's/^VIProductVersion "\([^"]*\)".*/\1/p' packaging/installer.nsi)
-          echo "version.go: $VER；installer.nsi: $NSI（$VIP）"
+          # （不写成「version.go: …」：setup-go 的报错规则会把「xxx.go: 文字」当成编译错误标出来）
+          echo "版本号 $VER（installer.nsi 中为 $NSI / $VIP）"
           bad=0
           [ -n "$VER" ] || { echo "::error file=internal/core/version.go::读不到 AppVersion"; bad=1; }
           [ "$NSI" = "$VER" ] || { echo "::error file=packaging/installer.nsi::VERSION 为 $NSI，version.go 为 $VER"; bad=1; }
